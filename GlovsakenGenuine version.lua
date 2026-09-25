@@ -1,5 +1,5 @@
 -- =========================================================
--- LOST: SANDBOX 手机玩家终极版 (技能过滤 + 无限体力深度修复)
+-- LOST: SANDBOX 手机玩家终极版 (Fixsaken核心 + 彻底修复走路误判)
 -- =========================================================
 
 repeat task.wait() until game:IsLoaded()
@@ -20,11 +20,11 @@ local clientPlayer = playersService.LocalPlayer
 local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
 
 local Window = WindUI:CreateWindow({
-    Title = "LOST Sentinel",
+    Title = "小雨",
     Icon = "shield",
-    Author = "Smart Detection",
+    Author = "Plus Core",
     Folder = "LostSandboxScript",
-    Size = UDim2.fromOffset(300, 450),
+    Size = UDim2.fromOffset(300, 520),
     Transparent = false,
     Theme = "Dark",
     Resizable = false,
@@ -45,38 +45,28 @@ Window:EditOpenButton({
 ---------------------------------------------------------
 local Config = {
     AutoBlockOn = false,
-    BlockCooldown = 0.4,
-    BlockDelay = 0.0,
-    LastBlockTime = 0,
-    BlockButtonName = "block",
-    ShowHitboxOnAttack = false,
-    AutoFitHitbox = true,
-    HitboxSizeMultiplier = 1.0,
-    HitboxSpacing = 1.5,
-    HitboxSize = 4,
-    HitboxTransparency = 0.1,
+    HitboxTransparency = 0.5,
     HitboxColor = Color3.fromRGB(255, 255, 255),
-    HitboxDuration = 0.3,
-    HitboxSegments = 3,
-    SegmentDelay = 0.1,
-    OffsetY = 2,
-    OffsetZ = 3,
-    MaxAttackDistance = 35,
-    SmartKillerNames = "Slacker, JX1DX1, Pursuer, Harken, Sonic.EXE, Slenderman, Zombie King, Erlking, Sukuna, Jeff The Killer, Herobrine, c00lkidd, Gubby, Cat, Horse, Artful, John Doe, [W.I.P]The Knight, Noli, The Stalker, 1x1x1x1, Killdroid, Doombringer, Flowers, Guest666, Buster Brawler, Nosferatu, BRIMSTONE, Azure, King, NoliRework, Duke Erisia, Baldi, Slasher, Jason",
+    HitboxSizeMultiplier = 1.0,
+    HitboxOffset = -1.4,
+    HitboxDuration = 0.4,
+    BlockDelay = 0,
+    ShowHitboxOnAttack = false,
+    EnableSkillDetection = true,
+    EnableM1Detection = true,
+    EnableToolDetection = true,
+    -- 【核心修复】动画过滤配置
+    StrictAnimDetection = true, -- 严格模式
+    AttackAnimKeywords = "attack,punch,slash,hit,m1,swing,kick,stab,shoot,cast,skill,ability,heavy,combo",
     IgnoreAnimKeywords = "walk,run,idle,fall,jump,climb,swim,sit,laugh,emote,interact,use,equip,unequip",
-    -- 【新增】忽略技能关键词，防止非攻击技能触发格挡
-    IgnoreSkillKeywords = "see,vision,reveal,track,mark,scan,radar,wallhack,aura,dash,sprint,heal,buff,shield,invisible,fly,speed,transformation,summon",
-    IgnoreMinions = true,
-    NetKeywords = "hit,attack,damage,punch,slash,kill,m1,use,skill,ability,cast,action",
-    HitboxGlobalCooldown = 0.2,
-    LastHitboxTime = 0,
+    InfiniteStaminaOn = false,
     RemoveBlindness = false,
     FullBright = false,
     ESPOn = false,
     ESPShowKillers = true,
     ESPShowSurvivors = true,
     ESPShowMedkits = true,
-    InfiniteStaminaOn = false,
+    DebugMode = true,
 }
 
 local function Notify(title, content)
@@ -86,13 +76,11 @@ end
 ---------------------------------------------------------
 -- 3. UI 界面构建
 ---------------------------------------------------------
--- 测试版提醒
-local AlertTab = Window:Tab({ Title = "⚠️ 提醒", Icon = "alert-triangle" })
+local AlertTab = Window:Tab({ Title = "⚠️ 测试版提醒", Icon = "alert-triangle" })
 local AlertSection = AlertTab:Section({ Title = "使用须知", Opened = true })
-AlertSection:Paragraph({ Title = "该脚本是测试 封禁请由玩家自行承担", Content = "该脚本为测试版 (Beta)，存在非常多的 Bug！请在使用前确认风险，出现任何问题由玩家自行承担。" })
-AlertSection:Button({ Title = "我已知晓风险", Callback = function() WindUI:Notify({ Title = "感谢支持", Content = "请谨慎调整各项参数，祝你游戏愉快！", Duration = 3 }) end })
+AlertSection:Paragraph({ Title = "该脚本已警告过您 任何封禁与我们无关", Content = "该脚本为测试版，已彻底修复走路误判。" })
+AlertSection:Button({ Title = "我已知晓风险", Callback = function() WindUI:Notify({ Title = "感谢支持", Content = "祝你游戏愉快！", Duration = 3 }) end })
 
--- Sentinel 主栏目
 local SentinelTab = Window:Tab({ Title = "Sentinel", Icon = "shield" })
 
 local ESPSection = SentinelTab:Section({ Title = "ESP 透视", Opened = true })
@@ -103,49 +91,47 @@ ESPSection:Toggle({ Title = "显示医疗包 (青)", Default = true, Callback = 
 
 SentinelTab:Divider()
 
-local BlockSection = SentinelTab:Section({ Title = "Attack 检测格挡", Opened = true })
-BlockSection:Toggle({ Title = "启用自动格挡", Default = false, Callback = function(state) Config.AutoBlockOn = state end })
-BlockSection:Slider({ Title = "格挡冷却 (秒)", Step = 0.05, Value = { Min = 0.05, Max = 1.0, Default = 0.4 }, Callback = function(value) Config.BlockCooldown = value end })
+local BlockSection = SentinelTab:Section({ Title = "Attack 检测格挡 (Fixsaken核心)", Opened = true })
+BlockSection:Toggle({ Title = "启用自动格挡", Default = false, Callback = function(state) 
+    Config.AutoBlockOn = state 
+    if state then EnableAutoBlock() else DisableAutoBlock() end
+end })
 BlockSection:Slider({ Title = "格挡延迟 (秒)", Step = 0.05, Value = { Min = 0, Max = 1.0, Default = 0.0 }, Callback = function(value) Config.BlockDelay = value end })
-BlockSection:Input({ Title = "格挡按钮名字", Value = "block", Callback = function(text) if text and text ~= "" then Config.BlockButtonName = text end end })
-BlockSection:Button({ Title = "手动触发格挡 (测试用)", Callback = function() FireBlock() end })
+BlockSection:Toggle({ Title = "调试模式", Default = true, Callback = function(state) Config.DebugMode = state end })
+
+BlockSection:Divider()
+BlockSection:Toggle({ Title = "监听技能 (属性)", Default = true, Callback = function(state) Config.EnableSkillDetection = state end })
+BlockSection:Toggle({ Title = "监听 M1 (动画)", Default = true, Callback = function(state) Config.EnableM1Detection = state end })
+BlockSection:Toggle({ Title = "监听武器 (工具)", Default = true, Callback = function(state) Config.EnableToolDetection = state end })
+
+BlockSection:Divider()
+BlockSection:Toggle({ Title = "白框指示器 (fart风格)", Default = false, Callback = function(state) Config.ShowHitboxOnAttack = state end })
+BlockSection:Slider({ Title = "Hitbox 透明度", Step = 0.05, Value = { Min = 0, Max = 1, Default = 0.5 }, Callback = function(value) Config.HitboxTransparency = value end })
+BlockSection:Colorpicker({ Title = "Hitbox 颜色", Default = Color3.fromRGB(255, 255, 255), Callback = function(color) Config.HitboxColor = color end })
 
 SentinelTab:Divider()
 local HitboxSection = SentinelTab:Section({ Title = "Attack 检测参数", Opened = true })
-
-HitboxSection:Input({ Title = "智能杀手名字 (逗号分隔)", Value = Config.SmartKillerNames, Callback = function(text) if text and text ~= "" then Config.SmartKillerNames = text; Notify("提示", "已更新杀手名单") end end })
-HitboxSection:Toggle({ Title = "过滤小兵/召唤物", Default = true, Callback = function(state) Config.IgnoreMinions = state end })
 HitboxSection:Slider({ Title = "最大攻击距离 (米)", Step = 1, Value = { Min = 3, Max = 35, Default = 35 }, Callback = function(value) Config.MaxAttackDistance = value end })
-
--- 【核心新增】忽略技能关键词
-HitboxSection:Input({ 
-    Title = "忽略技能关键词 (防误触)", 
-    Value = Config.IgnoreSkillKeywords, 
-    Callback = function(text) 
-        if text and text ~= "" then 
-            Config.IgnoreSkillKeywords = text 
-            Notify("提示", "已更新忽略技能列表") 
-        end 
-    end 
-})
-
-HitboxSection:Input({ Title = "网络包监听关键词", Value = Config.NetKeywords, Callback = function(text) if text and text ~= "" then Config.NetKeywords = text end end })
-
-HitboxSection:Divider()
-HitboxSection:Toggle({ Title = "白框指示器 (fart风格)", Default = false, Callback = function(state) Config.ShowHitboxOnAttack = state end })
-HitboxSection:Toggle({ Title = "智能适配模型体积", Default = true, Callback = function(state) Config.AutoFitHitbox = state end })
 HitboxSection:Slider({ Title = "白框整体大小倍数", Step = 0.1, Value = { Min = 0.5, Max = 3.0, Default = 1.0 }, Callback = function(value) Config.HitboxSizeMultiplier = value end })
-HitboxSection:Slider({ Title = "分块间距倍数", Step = 0.1, Value = { Min = 0.5, Max = 3.0, Default = 1.5 }, Callback = function(value) Config.HitboxSpacing = value end })
+HitboxSection:Slider({ Title = "判定盒停留时间 (秒)", Step = 0.05, Value = { Min = 0.05, Max = 2.0, Default = 0.4 }, Callback = function(value) Config.HitboxDuration = value end })
 
-HitboxSection:Slider({ Title = "基础方块大小 (非自动)", Step = 1, Value = { Min = 1, Max = 10, Default = 4 }, Callback = function(value) Config.HitboxSize = value end })
-HitboxSection:Slider({ Title = "Hitbox 透明度", Step = 0.05, Value = { Min = 0, Max = 1, Default = 0.1 }, Callback = function(value) Config.HitboxTransparency = value end })
-HitboxSection:Colorpicker({ Title = "Hitbox 颜色", Default = Color3.fromRGB(255, 255, 255), Callback = function(color) Config.HitboxColor = color end })
-
-HitboxSection:Slider({ Title = "分块间隔时间 (秒)", Step = 0.05, Value = { Min = 0.05, Max = 0.5, Default = 0.1 }, Callback = function(value) Config.SegmentDelay = value end })
-HitboxSection:Slider({ Title = "分块数量 (1-6)", Step = 1, Value = { Min = 1, Max = 6, Default = 3 }, Callback = function(value) Config.HitboxSegments = value end })
-HitboxSection:Slider({ Title = "方块存在时间 (秒)", Step = 0.1, Value = { Min = 0.1, Max = 2.0, Default = 0.3 }, Callback = function(value) Config.HitboxDuration = value end })
-HitboxSection:Slider({ Title = "起始距离 (杀手正前方)", Step = 1, Value = { Min = 1, Max = 15, Default = 3 }, Callback = function(value) Config.OffsetZ = value end })
-HitboxSection:Slider({ Title = "高度偏移", Step = 1, Value = { Min = -5, Max = 10, Default = 2 }, Callback = function(value) Config.OffsetY = value end })
+-- 【核心新增】动画过滤高级设置
+HitboxSection:Divider()
+HitboxSection:Toggle({ 
+    Title = "严格动画过滤 (防走路误判)", 
+    Default = true, 
+    Callback = function(state) Config.StrictAnimDetection = state end 
+})
+HitboxSection:Input({ 
+    Title = "攻击关键词 (白名单)", 
+    Value = Config.AttackAnimKeywords, 
+    Callback = function(text) if text and text ~= "" then Config.AttackAnimKeywords = text end end 
+})
+HitboxSection:Input({ 
+    Title = "忽略动作关键词 (黑名单)", 
+    Value = Config.IgnoreAnimKeywords, 
+    Callback = function(text) if text and text ~= "" then Config.IgnoreAnimKeywords = text end end 
+})
 
 SentinelTab:Divider()
 local VisualSection = SentinelTab:Section({ Title = "视觉", Opened = true })
@@ -153,9 +139,11 @@ VisualSection:Toggle({ Title = "消除失明", Default = false, Callback = funct
 VisualSection:Toggle({ Title = "全图高亮 (夜视)", Default = false, Callback = function(state) Config.FullBright = state end })
 
 SentinelTab:Divider()
-local StaminaSection = SentinelTab:Section({ Title = "耐力系统", Opened = true })
-StaminaSection:Paragraph({ Title = "提示", Content = "如果开启后无效，说明游戏强制使用服务器体力。本脚本会拦截消耗请求。" })
-StaminaSection:Toggle({ Title = "无限耐力", Default = false, Callback = function(state) Config.InfiniteStaminaOn = state end })
+local StaminaSection = SentinelTab:Section({ Title = "耐力系统 (Sewimsaken核心)", Opened = true })
+StaminaSection:Toggle({ Title = "无限耐力", Default = false, Callback = function(state) 
+    Config.InfiniteStaminaOn = state 
+    SetInfiniteStamina(state)
+end })
 
 SentinelTab:Divider()
 local SaveSection = SentinelTab:Section({ Title = "配置管理", Opened = true })
@@ -193,50 +181,313 @@ function LoadConfig()
 end
 
 ---------------------------------------------------------
--- 5. 阵营判定
+-- 5. 【核心】格挡发包与空间检测
 ---------------------------------------------------------
-local function IsInGame()
-    local killersFolder = workspaceService:FindFirstChild("Players") and workspaceService.Players:FindFirstChild("Killers") or workspaceService:FindFirstChild("Killers")
-    if killersFolder and #killersFolder:GetChildren() > 0 then return true end
-    return false
+local BlockRemote = nil
+local lastBlockTime = 0
+local BLOCK_COOLDOWN = 0.25
+
+local function getBlockRemote()
+    if BlockRemote then return BlockRemote end
+    local success, remote = pcall(function()
+        return replicatedStorage:WaitForChild("Modules", 10):WaitForChild("Network", 5):WaitForChild("Network", 5):WaitForChild("RemoteEvent", 5)
+    end)
+    if success and remote then
+        BlockRemote = remote
+        return remote
+    end
+    return nil
 end
+
+local function fireBlockRemote()
+    if tick() - lastBlockTime < BLOCK_COOLDOWN then return end
+    lastBlockTime = tick()
+    
+    local remote = getBlockRemote()
+    if remote then
+        pcall(function()
+            remote:FireServer("UseActorAbility", { buffer.fromstring("\003\005\000\000\000Block") })
+            if Config.DebugMode then print("[Sentinel Debug] ✅ 已发送二进制格挡包") end
+        end)
+    end
+
+    local playerGui = clientPlayer:FindFirstChild("PlayerGui")
+    if playerGui then
+        for _, obj in ipairs(playerGui:GetDescendants()) do
+            if (obj:IsA("TextButton") or obj:IsA("ImageButton")) and obj.Visible and obj.Active then
+                local n = obj.Name:lower()
+                if n:find("block") or n:find("defend") or n:find("shield") or n:find("格挡") then
+                    pcall(function()
+                        if getconnections then
+                            local conns = getconnections(obj.MouseButton1Click)
+                            for _, c in ipairs(conns) do c:Fire() end
+                        end
+                    end)
+                    break
+                end
+            end
+        end
+    end
+end
+
+local function createSpatialOverlapBox(creatorChar, size, onHitDetected)
+    local creatorRoot = creatorChar:FindFirstChild("HumanoidRootPart") or creatorChar:FindFirstChild("RootPart")
+    if not creatorRoot then return end
+    local overlapParams = OverlapParams.new()
+    overlapParams.FilterType = Enum.RaycastFilterType.Exclude
+    overlapParams.FilterDescendantsInstances = { creatorChar }
+    
+    task.spawn(function()
+        local timePast = 0
+        while creatorChar.Parent and creatorRoot and creatorRoot.Parent and timePast < Config.HitboxDuration do
+            local Part = Instance.new("Part")
+            Part.Name = "AutoBlockHitbox_Frame"
+            Part.Transparency = Config.HitboxTransparency
+            Part.CanCollide = false
+            Part.Anchored = true
+            Part.Size = size
+            Part.Color = Config.HitboxColor
+            Part.Material = Enum.Material.ForceField
+            Part.CFrame = creatorRoot.CFrame * CFrame.new(0, 0, Config.HitboxOffset)
+            Part.Parent = workspaceService
+            
+            task.delay(0.05, function() if Part then Part:Destroy() end end)
+            
+            local parts = workspaceService:GetPartsInPart(Part, overlapParams)
+            local localPlayerHit = false
+            for _, v in ipairs(parts) do
+                local character = v:FindFirstAncestorOfClass("Model")
+                if character then
+                    local humanoid = character:FindFirstChildOfClass("Humanoid")
+                    if humanoid and humanoid.Health > 0 then
+                        local player = playersService:GetPlayerFromCharacter(character)
+                        if player == clientPlayer then
+                            localPlayerHit = true
+                            break
+                        end
+                    end
+                end
+            end
+            
+            if not localPlayerHit then
+                local myChar = clientPlayer.Character
+                local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
+                if myHRP then
+                    local distanceToBox = (myHRP.Position - Part.Position).Magnitude
+                    if distanceToBox <= (size.Magnitude * 0.8) then
+                        localPlayerHit = true
+                        if Config.DebugMode then print("[Sentinel Debug] 📏 距离兜底检测触发！") end
+                    end
+                end
+            end
+
+            if localPlayerHit then
+                if Config.DebugMode then print("[Sentinel Debug] 🎯 攻击判定命中！") end
+                task.wait(Config.BlockDelay)
+                if onHitDetected then onHitDetected() end
+                break
+            end
+            timePast = timePast + runService.Heartbeat:Wait()
+        end
+    end)
+end
+
+local function TriggerDefense(killerChar, source)
+    if not Config.AutoBlockOn then return end
+    if Config.DebugMode then print("[Sentinel Debug] ⚔️ 检测到攻击事件 (" .. source .. ")，生成判定盒...") end
+    local baseSize = Vector3.new(4.5, 6, 7.5) * Config.HitboxSizeMultiplier
+    createSpatialOverlapBox(
+        killerChar,
+        baseSize,
+        function()
+            fireBlockRemote()
+        end
+    )
+end
+
+---------------------------------------------------------
+-- 6. 【核心修复】严格阵营过滤与动画过滤
+---------------------------------------------------------
+local hookedKillers = {}
 
 local function IsKillerCharacter(char)
     if not char or not char:IsA("Model") or not char:FindFirstChild("Humanoid") then return false end
     if char == clientPlayer.Character then return false end
+    
+    local killersFolder = workspaceService:FindFirstChild("Players") and workspaceService.Players:FindFirstChild("Killers") or workspaceService:FindFirstChild("Killers")
+    if not killersFolder or not char:IsDescendantOf(killersFolder) then return false end
+    
     local plr = playersService:GetPlayerFromCharacter(char)
     if plr == clientPlayer then return false end
     
-    local parent = char.Parent
-    if not parent then return false end
-    if parent.Name:lower():find("survivor") then return false end
-    
-    local customNames = {}
-    for word in string.gmatch(Config.SmartKillerNames, '([^,]+)') do
-        local trimmed = word:match("^%s*(.-)%s*$"):lower()
-        if #trimmed > 0 then table.insert(customNames, trimmed) end
-    end
-    
     local charName = char.Name:lower()
-    for _, name in ipairs(customNames) do
-        if charName:find(name) then return true end
+    if charName:find("minion") or charName:find("bot") or charName:find("summon") 
+       or charName:find("clone") or charName:find("follower") or charName:find("npc") then
+        return false 
     end
-
-    if not parent.Name:lower():find("killer") and not charName:find("killer") then return false end
-
-    if Config.IgnoreMinions then
-        if charName:find("minion") or charName:find("bot") or charName:find("summon") 
-           or charName:find("clone") or charName:find("follower") or charName:find("npc") then
-            return false 
-        end
-    end
+    
     return true
 end
 
+-- 解析关键词列表
+local function ParseKeywords(str)
+    local list = {}
+    for word in string.gmatch(str, '([^,]+)') do
+        table.insert(list, word:lower():gsub("^%s*(.-)%s*$", "%1"))
+    end
+    return list
+end
+
+local function SetupKillerMonitoring(killerChar)
+    if not IsKillerCharacter(killerChar) then return end
+    if hookedKillers[killerChar] then return end
+    hookedKillers[killerChar] = true
+
+    if Config.EnableSkillDetection then
+        killerChar:GetAttributeChangedSignal("AbilitiesUsed"):Connect(function()
+            TriggerDefense(killerChar, "技能属性")
+        end)
+    end
+
+    if Config.EnableToolDetection then
+        killerChar.DescendantAdded:Connect(function(desc)
+            if desc:IsA("Tool") then
+                desc.Activated:Connect(function() TriggerDefense(killerChar, "工具激活") end)
+            end
+        end)
+        local currentTool = killerChar:FindFirstChildOfClass("Tool")
+        if currentTool then
+            currentTool.Activated:Connect(function() TriggerDefense(killerChar, "工具激活") end)
+        end
+    end
+
+    if Config.EnableM1Detection then
+        local humanoid = killerChar:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            local animator = humanoid:FindFirstChildOfClass("Animator") or humanoid:FindFirstChildOfClass("AnimationController")
+            if animator then
+                animator.AnimationPlayed:Connect(function(track)
+                    local animName = track.Animation and track.Animation.Name:lower() or ""
+                    local priority = track.Priority
+
+                    -- 1. 底层过滤：屏蔽掉核心移动和待机优先级
+                    if priority == Enum.AnimationPriority.Core or 
+                       priority == Enum.AnimationPriority.Movement or 
+                       priority == Enum.AnimationPriority.Idle then 
+                        return 
+                    end
+
+                    -- 2. 名字过滤：排除走路、跑步、交互等
+                    local ignoreList = ParseKeywords(Config.IgnoreAnimKeywords)
+                    for _, kw in ipairs(ignoreList) do
+                        if animName:find(kw) then return end
+                    end
+
+                    -- 3. 严格模式：必须满足动作优先级或包含攻击关键词
+                    if Config.StrictAnimDetection then
+                        local isAttackName = false
+                        local attackList = ParseKeywords(Config.AttackAnimKeywords)
+                        for _, kw in ipairs(attackList) do
+                            if animName:find(kw) then isAttackName = true; break end
+                        end
+
+                        local isActionPriority = priority == Enum.AnimationPriority.Action or 
+                                                 priority == Enum.AnimationPriority.Action2 or 
+                                                 priority == Enum.AnimationPriority.Action3 or 
+                                                 priority == Enum.AnimationPriority.Action4
+                        
+                        -- 如果既不是攻击名字，也不是动作优先级，则跳过（防走路误判）
+                        if not isAttackName and not isActionPriority then return end
+                    end
+
+                    -- 经过层层过滤，确认为攻击动作
+                    if Config.DebugMode then print("[Sentinel Debug] 动画命中: " .. animName .. " | 优先级: " .. priority.Name) end
+                    TriggerDefense(killerChar, "M1动画")
+                end)
+            end
+        end
+    end
+
+    if Config.DebugMode then print("[Sentinel Debug] 🎯 已成功挂钩杀手: " .. killerChar.Name) end
+end
+
+local function ScanKillers()
+    local killersFolder = workspaceService:FindFirstChild("Players") and workspaceService.Players:FindFirstChild("Killers") or workspaceService:FindFirstChild("Killers")
+    if killersFolder then
+        for _, child in ipairs(killersFolder:GetChildren()) do
+            if child:IsA("Model") then SetupKillerMonitoring(child) end
+        end
+    end
+end
+
+workspaceService.DescendantAdded:Connect(function(desc)
+    if desc:IsA("Model") and desc:FindFirstChild("Humanoid") then
+        task.wait(0.5)
+        SetupKillerMonitoring(desc)
+    end
+end)
+
+function EnableAutoBlock()
+    ScanKillers()
+    getBlockRemote()
+    if Config.DebugMode then print("[Sentinel Debug] ✅ 自动格挡已开启") end
+end
+
+function DisableAutoBlock()
+    if Config.DebugMode then print("[Sentinel Debug] ❌ 自动格挡已关闭") end
+end
+
+task.spawn(function()
+    while task.wait(1) do
+        if Config.AutoBlockOn then ScanKillers() end
+    end
+end)
+
 ---------------------------------------------------------
--- 6. 核心逻辑：ESP、白框、格挡
+-- 7. 【核心】Fixsaken 无限体力
 ---------------------------------------------------------
--- ESP
+local SprintingModule = nil
+local function GetSprintingModule()
+    if SprintingModule then return SprintingModule end
+    local success, mod = pcall(function()
+        return replicatedStorage:WaitForChild("Systems"):WaitForChild("Character"):WaitForChild("Game"):WaitForChild("Sprinting")
+    end)
+    if success and mod then
+        SprintingModule = mod
+        return mod
+    end
+    return nil
+end
+
+function SetInfiniteStamina(state)
+    local mod = GetSprintingModule()
+    if not mod then
+        Notify("无限耐力", "无法找到游戏体力模块")
+        return
+    end
+    if state then
+        local success, err = pcall(function()
+            local sprinting = require(mod)
+            if sprinting then
+                sprinting.StaminaLoss = 0
+                sprinting.StaminaGain = 9999
+            end
+        end)
+        if success then Notify("无限耐力", "已成功修改底层模块") else Notify("无限耐力", "修改失败: " .. tostring(err)) end
+    else
+        pcall(function()
+            local sprinting = require(mod)
+            if sprinting then
+                sprinting.StaminaLoss = 10
+                sprinting.StaminaGain = 25
+            end
+        end)
+    end
+end
+
+---------------------------------------------------------
+-- 8. ESP 与视觉
+---------------------------------------------------------
 local espHighlights = {}
 local function CreateESP(target, isKiller, isMedkit)
     if not target:IsA("Model") then return end
@@ -334,278 +585,6 @@ task.spawn(function()
                     v.Density = 0; v.Offset = 0; v.Color = Color3.fromRGB(255, 255, 255); v.Decay = Color3.fromRGB(255, 255, 255); v.Glare = 0; v.Haze = 0
                 elseif v:IsA("PostEffect") then
                     v.Enabled = false
-                end
-            end
-        end
-    end
-end)
-
--- 白框核心逻辑
-local HitboxFolder = nil
-local currentSequenceToken = 0
-
-local function ShowAttackHitbox(killerChar)
-    if not Config.ShowHitboxOnAttack then return end
-    local now = tick()
-    if now < Config.LastHitboxTime + Config.HitboxGlobalCooldown then return end
-    Config.LastHitboxTime = now
-
-    local killerHRP = killerChar:FindFirstChild("HumanoidRootPart")
-    if not killerHRP then return end
-
-    currentSequenceToken = currentSequenceToken + 1
-    local myToken = currentSequenceToken
-
-    if HitboxFolder then HitboxFolder:Destroy() end
-    HitboxFolder = Instance.new("Folder")
-    HitboxFolder.Name = "LostHitboxSegments"
-    HitboxFolder.Parent = workspaceService
-
-    local baseSize = Config.HitboxSize
-    if Config.AutoFitHitbox then
-        local modelSize = killerChar:GetExtentsSize()
-        baseSize = (modelSize.X + modelSize.Y + modelSize.Z) / 3 * 0.4
-        if baseSize < 1 then baseSize = 1 end
-        if baseSize > 15 then baseSize = 15 end
-    end
-    
-    local finalSize = baseSize * Config.HitboxSizeMultiplier
-
-    local lookVector = killerHRP.CFrame.LookVector
-    local startPos = killerHRP.Position + Vector3.new(0, Config.OffsetY, 0)
-
-    task.spawn(function()
-        for i = 1, Config.HitboxSegments do
-            if myToken ~= currentSequenceToken then return end
-            if i > 1 then task.wait(Config.SegmentDelay) end
-            if myToken ~= currentSequenceToken then return end
-
-            local part = Instance.new("Part")
-            part.Name = "HitboxSegment_" .. i
-            part.Anchored = true; part.CanCollide = false
-            part.Material = Enum.Material.ForceField
-            part.Color = Config.HitboxColor
-            part.Transparency = Config.HitboxTransparency
-            part.Size = Vector3.new(finalSize, finalSize, finalSize)
-            part.CastShadow = false; part.Parent = HitboxFolder
-
-            local distance = Config.OffsetZ + (i - 1) * (finalSize * Config.HitboxSpacing)
-            part.CFrame = CFrame.new(startPos + lookVector * distance)
-
-            task.delay(Config.HitboxDuration, function() if part and part.Parent then part:Destroy() end end)
-        end
-    end)
-end
-
--- 安全格挡
-local networkRemote = replicatedStorage:FindFirstChild("Modules") 
-    and replicatedStorage.Modules:FindFirstChild("Network") 
-    and replicatedStorage.Modules.Network:FindFirstChild("RemoteEvent")
-
-local function FireBlockLocalEvent()
-    local playerGui = clientPlayer:FindFirstChild("PlayerGui")
-    if not playerGui then return false end
-    for _, obj in ipairs(playerGui:GetDescendants()) do
-        if (obj:IsA("TextButton") or obj:IsA("ImageButton")) and obj.Visible and obj.Active then
-            local n = obj.Name:lower()
-            if n:find(Config.BlockButtonName:lower()) or n:find("block") or n:find("defend") or n:find("shield") or n:find("格挡") then
-                if getconnections then
-                    local success, connections = pcall(getconnections, obj.MouseButton1Click)
-                    if success and connections then
-                        for _, conn in ipairs(connections) do pcall(function() conn:Fire() end) end
-                        return true
-                    end
-                end
-                pcall(function() obj:Activated() end)
-                return true
-            end
-        end
-    end
-    return false
-end
-
-local function FireBlock()
-    local localSuccess = FireBlockLocalEvent()
-    if not localSuccess and networkRemote then
-        pcall(function() networkRemote:FireServer("UseActorAbility", { buffer.fromstring("\"Block\"") }) end)
-    end
-end
-
--- 综合检测与格挡
-local function IsValidAttack(killerChar)
-    if not killerChar or not killerChar.Parent then return false end
-    local myHRP = clientPlayer.Character and clientPlayer.Character:FindFirstChild("HumanoidRootPart")
-    local killerHRP = killerChar:FindFirstChild("HumanoidRootPart")
-    if not myHRP or not killerHRP then return false end
-    local dist = (myHRP.Position - killerHRP.Position).Magnitude
-    if dist > Config.MaxAttackDistance then return false end
-    return true
-end
-
-local function AttemptAutoBlock(killerChar, source)
-    if not killerChar then return end
-    if not IsValidAttack(killerChar) then return end
-    
-    ShowAttackHitbox(killerChar)
-    if not Config.AutoBlockOn then return end
-
-    local now = tick()
-    if now < Config.LastBlockTime + Config.BlockCooldown then return end
-    
-    if Config.BlockDelay > 0 then
-        task.delay(Config.BlockDelay, function() FireBlock() end)
-    else
-        FireBlock()
-    end
-    
-    Config.LastBlockTime = now
-end
-
----------------------------------------------------------
--- 7. 智能全技能监听 (修复技能误触)
----------------------------------------------------------
-local function SetupKillerHooks(killerChar)
-    if not IsKillerCharacter(killerChar) then return end
-    
-    killerChar.DescendantAdded:Connect(function(desc)
-        if desc:IsA("Tool") then 
-            desc.Activated:Connect(function() AttemptAutoBlock(killerChar, "Tool") end) 
-        end
-    end)
-    local currentTool = killerChar:FindFirstChildOfClass("Tool")
-    if currentTool then
-        currentTool.Activated:Connect(function() AttemptAutoBlock(killerChar, "Tool") end)
-    end
-
-    local function HookAnimator(animatorObj)
-        if not animatorObj then return end
-        animatorObj.AnimationPlayed:Connect(function(track)
-            local animName = track.Animation and track.Animation.Name:lower() or ""
-            
-            -- 1. 过滤日常动作
-            for _, kw in ipairs({"walk", "run", "idle", "fall", "jump", "climb", "swim", "sit", "laugh", "emote", "interact", "use", "equip", "unequip"}) do
-                if animName:find(kw) then return end
-            end
-            
-            -- 2. 【核心修复】过滤技能动作
-            local ignoreSkills = {}
-            for word in string.gmatch(Config.IgnoreSkillKeywords, '([^,]+)') do
-                table.insert(ignoreSkills, word:lower():gsub("^%s*(.-)%s*$", "%1"))
-            end
-            for _, kw in ipairs(ignoreSkills) do
-                if animName:find(kw) then return end
-            end
-
-            AttemptAutoBlock(killerChar, "Anim:"..animName)
-        end)
-    end
-
-    local humanoid = killerChar:FindFirstChildOfClass("Humanoid")
-    if humanoid then
-        HookAnimator(humanoid:FindFirstChildOfClass("Animator"))
-        HookAnimator(humanoid:FindFirstChildOfClass("AnimationController"))
-        humanoid.DescendantAdded:Connect(function(desc)
-            if desc:IsA("Animator") or desc:IsA("AnimationController") then HookAnimator(desc) end
-        end)
-    end
-end
-
-local function HookIncomingAttacks()
-    local keywords = {}
-    for word in string.gmatch(Config.NetKeywords, '([^,]+)') do
-        table.insert(keywords, word:lower():gsub("^%s*(.-)%s*$", "%1"))
-    end
-    local function CheckRemote(remote)
-        if not remote:IsA("RemoteEvent") then return end
-        local n = remote.Name:lower()
-        local isTarget = false
-        for _, kw in ipairs(keywords) do
-            if n:find(kw) then isTarget = true; break end
-        end
-        if isTarget then
-            remote.OnClientEvent:Connect(function(...)
-                if not IsInGame() then return end
-                
-                -- 【核心修复】如果网络包名字里有 "use"、"skill"、"ability"，但没有 "attack"、"hit"，则认定为非攻击技能，忽略
-                local lowerName = remote.Name:lower()
-                if (lowerName:find("use") or lowerName:find("skill") or lowerName:find("ability")) then
-                    if not (lowerName:find("attack") or lowerName:find("hit") or lowerName:find("damage") or lowerName:find("punch") or lowerName:find("slash")) then
-                        return
-                    end
-                end
-                
-                local myHRP = clientPlayer.Character and clientPlayer.Character:FindFirstChild("HumanoidRootPart")
-                if myHRP then
-                    local closestKiller, minDist = nil, Config.MaxAttackDistance
-                    for _, k in ipairs(workspaceService:GetDescendants()) do
-                        if IsKillerCharacter(k) and k:FindFirstChild("HumanoidRootPart") then
-                            local d = (myHRP.Position - k.HumanoidRootPart.Position).Magnitude
-                            if d < minDist then minDist = d; closestKiller = k end
-                        end
-                    end
-                    if closestKiller then AttemptAutoBlock(closestKiller, "Net:"..n) end
-                end
-            end)
-        end
-    end
-    for _, v in ipairs(replicatedStorage:GetDescendants()) do CheckRemote(v) end
-    replicatedStorage.DescendantAdded:Connect(CheckRemote)
-end
-
-for _, desc in ipairs(workspaceService:GetDescendants()) do
-    if desc:IsA("Model") and desc:FindFirstChild("Humanoid") and desc:FindFirstChild("HumanoidRootPart") then
-        if desc ~= clientPlayer.Character then SetupKillerHooks(desc) end
-    end
-end
-workspaceService.DescendantAdded:Connect(function(desc)
-    if desc:IsA("Model") and desc:FindFirstChild("Humanoid") and desc:FindFirstChild("HumanoidRootPart") then
-        if desc ~= clientPlayer.Character then task.wait(0.5); SetupKillerHooks(desc) end
-    end
-end)
-HookIncomingAttacks()
-
----------------------------------------------------------
--- 8. 【深度修复】无限体力逻辑 (拦截扣体力包 + 强行锁定)
----------------------------------------------------------
-local function HookStaminaDrain()
-    for _, v in ipairs(replicatedStorage:GetDescendants()) do
-        if v:IsA("RemoteEvent") then
-            local nameLower = v.Name:lower()
-            if nameLower:find("stamina") or nameLower:find("sprint") or nameLower:find("dash") or nameLower:find("energy") then
-                if hookmetamethod then
-                    local oldFire = v.FireServer
-                    v.FireServer = function(self, ...)
-                        if Config.InfiniteStaminaOn then return end
-                        return oldFire(self, ...)
-                    end
-                end
-            end
-        end
-    end
-end
-HookStaminaDrain()
-
-task.spawn(function()
-    while task.wait(0.1) do
-        if not Config.InfiniteStaminaOn then continue end
-        
-        -- 扩大扫描范围，包括 PlayerGui
-        local targetsToScan = {clientPlayer, clientPlayer.Character, clientPlayer:FindFirstChild("PlayerGui")}
-        
-        for _, target in ipairs(targetsToScan) do
-            if target then
-                for _, v in ipairs(target:GetDescendants()) do
-                    if v:IsA("NumberValue") or v:IsA("IntValue") then
-                        local n = v.Name:lower()
-                        if n:find("stamina") or n:find("energy") or n:find("endurance") or n:find("sp") then
-                            local maxVal = v:GetAttribute("Max") or v:GetAttribute("MaxValue") or 100
-                            if v.Value < maxVal then v.Value = maxVal end
-                        end
-                    end
-                end
-                for _, attr in ipairs(target:GetAttributes()) do
-                    local a = attr:lower()
-                    if a:find("stamina") or a:find("energy") or a:find("endurance") then target:SetAttribute(attr, 100) end
                 end
             end
         end

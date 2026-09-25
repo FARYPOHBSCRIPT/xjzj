@@ -1,5 +1,5 @@
 -- =========================================================
--- LOST: SANDBOX 手机玩家终极版 (Fixsaken核心 + 彻底修复走路误判)
+-- LOST: SANDBOX 手机玩家终极版 (Fixsaken核心 + 彻底修复触发与距离判定)
 -- =========================================================
 
 repeat task.wait() until game:IsLoaded()
@@ -20,9 +20,9 @@ local clientPlayer = playersService.LocalPlayer
 local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
 
 local Window = WindUI:CreateWindow({
-    Title = "小雨",
+    Title = "LOST Sentinel",
     Icon = "shield",
-    Author = "Plus Core",
+    Author = "Fi Core",
     Folder = "LostSandboxScript",
     Size = UDim2.fromOffset(300, 520),
     Transparent = false,
@@ -55,8 +55,8 @@ local Config = {
     EnableSkillDetection = true,
     EnableM1Detection = true,
     EnableToolDetection = true,
-    -- 【核心修复】动画过滤配置
-    StrictAnimDetection = true, -- 严格模式
+    -- 【核心修复】默认关闭严格过滤
+    StrictAnimDetection = false, 
     AttackAnimKeywords = "attack,punch,slash,hit,m1,swing,kick,stab,shoot,cast,skill,ability,heavy,combo",
     IgnoreAnimKeywords = "walk,run,idle,fall,jump,climb,swim,sit,laugh,emote,interact,use,equip,unequip",
     InfiniteStaminaOn = false,
@@ -78,7 +78,7 @@ end
 ---------------------------------------------------------
 local AlertTab = Window:Tab({ Title = "⚠️ 测试版提醒", Icon = "alert-triangle" })
 local AlertSection = AlertTab:Section({ Title = "使用须知", Opened = true })
-AlertSection:Paragraph({ Title = "该脚本已警告过您 任何封禁与我们无关", Content = "该脚本为测试版，已彻底修复走路误判。" })
+AlertSection:Paragraph({ Title = "重要警告", Content = "该脚本为测试版，已修复触发与距离判定问题。" })
 AlertSection:Button({ Title = "我已知晓风险", Callback = function() WindUI:Notify({ Title = "感谢支持", Content = "祝你游戏愉快！", Duration = 3 }) end })
 
 local SentinelTab = Window:Tab({ Title = "Sentinel", Icon = "shield" })
@@ -91,7 +91,7 @@ ESPSection:Toggle({ Title = "显示医疗包 (青)", Default = true, Callback = 
 
 SentinelTab:Divider()
 
-local BlockSection = SentinelTab:Section({ Title = "Attack 检测格挡 (Mine核心)", Opened = true })
+local BlockSection = SentinelTab:Section({ Title = "Attack 检测格挡 (已修复)", Opened = true })
 BlockSection:Toggle({ Title = "启用自动格挡", Default = false, Callback = function(state) 
     Config.AutoBlockOn = state 
     if state then EnableAutoBlock() else DisableAutoBlock() end
@@ -115,23 +115,11 @@ HitboxSection:Slider({ Title = "最大攻击距离 (米)", Step = 1, Value = { M
 HitboxSection:Slider({ Title = "白框整体大小倍数", Step = 0.1, Value = { Min = 0.5, Max = 3.0, Default = 1.0 }, Callback = function(value) Config.HitboxSizeMultiplier = value end })
 HitboxSection:Slider({ Title = "判定盒停留时间 (秒)", Step = 0.05, Value = { Min = 0.05, Max = 2.0, Default = 0.4 }, Callback = function(value) Config.HitboxDuration = value end })
 
--- 【核心新增】动画过滤高级设置
+-- 【核心修复】默认关闭严格过滤，防止自定义皮肤不触发
 HitboxSection:Divider()
-HitboxSection:Toggle({ 
-    Title = "严格动画过滤 (防走路误判)", 
-    Default = true, 
-    Callback = function(state) Config.StrictAnimDetection = state end 
-})
-HitboxSection:Input({ 
-    Title = "攻击关键词 (白名单)", 
-    Value = Config.AttackAnimKeywords, 
-    Callback = function(text) if text and text ~= "" then Config.AttackAnimKeywords = text end end 
-})
-HitboxSection:Input({ 
-    Title = "忽略动作关键词 (黑名单)", 
-    Value = Config.IgnoreAnimKeywords, 
-    Callback = function(text) if text and text ~= "" then Config.IgnoreAnimKeywords = text end end 
-})
+HitboxSection:Toggle({ Title = "严格动画过滤 (防走路误判)", Default = false, Callback = function(state) Config.StrictAnimDetection = state end })
+HitboxSection:Input({ Title = "攻击关键词 (白名单)", Value = Config.AttackAnimKeywords, Callback = function(text) if text and text ~= "" then Config.AttackAnimKeywords = text end end })
+HitboxSection:Input({ Title = "忽略动作关键词 (黑名单)", Value = Config.IgnoreAnimKeywords, Callback = function(text) if text and text ~= "" then Config.IgnoreAnimKeywords = text end end })
 
 SentinelTab:Divider()
 local VisualSection = SentinelTab:Section({ Title = "视觉", Opened = true })
@@ -139,7 +127,7 @@ VisualSection:Toggle({ Title = "消除失明", Default = false, Callback = funct
 VisualSection:Toggle({ Title = "全图高亮 (夜视)", Default = false, Callback = function(state) Config.FullBright = state end })
 
 SentinelTab:Divider()
-local StaminaSection = SentinelTab:Section({ Title = "耐力系统 (Sewimsaken核心)", Opened = true })
+local StaminaSection = SentinelTab:Section({ Title = "耐力系统 (67核心)", Opened = true })
 StaminaSection:Toggle({ Title = "无限耐力", Default = false, Callback = function(state) 
     Config.InfiniteStaminaOn = state 
     SetInfiniteStamina(state)
@@ -186,6 +174,8 @@ end
 local BlockRemote = nil
 local lastBlockTime = 0
 local BLOCK_COOLDOWN = 0.25
+local lastTriggerTime = 0
+local TRIGGER_COOLDOWN = 0.3 -- 【核心修复】攻击触发全局冷却，防止刷屏
 
 local function getBlockRemote()
     if BlockRemote then return BlockRemote end
@@ -269,14 +259,15 @@ local function createSpatialOverlapBox(creatorChar, size, onHitDetected)
                 end
             end
             
+            -- 【核心修复】精准的距离兜底检测（半径5米内直接触发）
             if not localPlayerHit then
                 local myChar = clientPlayer.Character
                 local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
                 if myHRP then
                     local distanceToBox = (myHRP.Position - Part.Position).Magnitude
-                    if distanceToBox <= (size.Magnitude * 0.8) then
+                    if distanceToBox <= 5 then -- 5米内视为被击中
                         localPlayerHit = true
-                        if Config.DebugMode then print("[Sentinel Debug] 📏 距离兜底检测触发！") end
+                        if Config.DebugMode then print("[Sentinel Debug] 📏 距离兜底触发！") end
                     end
                 end
             end
@@ -294,6 +285,10 @@ end
 
 local function TriggerDefense(killerChar, source)
     if not Config.AutoBlockOn then return end
+    -- 【核心修复】全局攻击冷却，防止一个M1动作触发十几次判定盒
+    if tick() - lastTriggerTime < TRIGGER_COOLDOWN then return end
+    lastTriggerTime = tick()
+    
     if Config.DebugMode then print("[Sentinel Debug] ⚔️ 检测到攻击事件 (" .. source .. ")，生成判定盒...") end
     local baseSize = Vector3.new(4.5, 6, 7.5) * Config.HitboxSizeMultiplier
     createSpatialOverlapBox(
@@ -329,11 +324,13 @@ local function IsKillerCharacter(char)
     return true
 end
 
--- 解析关键词列表
 local function ParseKeywords(str)
     local list = {}
     for word in string.gmatch(str, '([^,]+)') do
-        table.insert(list, word:lower():gsub("^%s*(.-)%s*$", "%1"))
+        local trimmed = (word:lower():gsub("^%s*(.-)%s*$", "%1"))
+        if #trimmed > 0 then
+            table.insert(list, trimmed)
+        end
     end
     return list
 end
@@ -343,12 +340,14 @@ local function SetupKillerMonitoring(killerChar)
     if hookedKillers[killerChar] then return end
     hookedKillers[killerChar] = true
 
+    -- 1. 技能属性监听
     if Config.EnableSkillDetection then
         killerChar:GetAttributeChangedSignal("AbilitiesUsed"):Connect(function()
             TriggerDefense(killerChar, "技能属性")
         end)
     end
 
+    -- 2. 武器工具监听
     if Config.EnableToolDetection then
         killerChar.DescendantAdded:Connect(function(desc)
             if desc:IsA("Tool") then
@@ -361,6 +360,7 @@ local function SetupKillerMonitoring(killerChar)
         end
     end
 
+    -- 3. M1 动画监听（放宽版）
     if Config.EnableM1Detection then
         local humanoid = killerChar:FindFirstChildOfClass("Humanoid")
         if humanoid then
@@ -370,37 +370,33 @@ local function SetupKillerMonitoring(killerChar)
                     local animName = track.Animation and track.Animation.Name:lower() or ""
                     local priority = track.Priority
 
-                    -- 1. 底层过滤：屏蔽掉核心移动和待机优先级
+                    -- 底层过滤：屏蔽掉核心移动和待机优先级
                     if priority == Enum.AnimationPriority.Core or 
                        priority == Enum.AnimationPriority.Movement or 
                        priority == Enum.AnimationPriority.Idle then 
                         return 
                     end
 
-                    -- 2. 名字过滤：排除走路、跑步、交互等
+                    -- 名字过滤：排除走路、跑步、交互等
                     local ignoreList = ParseKeywords(Config.IgnoreAnimKeywords)
                     for _, kw in ipairs(ignoreList) do
                         if animName:find(kw) then return end
                     end
 
-                    -- 3. 严格模式：必须满足动作优先级或包含攻击关键词
+                    -- 如果开启了严格模式，执行白名单过滤
                     if Config.StrictAnimDetection then
                         local isAttackName = false
                         local attackList = ParseKeywords(Config.AttackAnimKeywords)
                         for _, kw in ipairs(attackList) do
                             if animName:find(kw) then isAttackName = true; break end
                         end
-
                         local isActionPriority = priority == Enum.AnimationPriority.Action or 
                                                  priority == Enum.AnimationPriority.Action2 or 
                                                  priority == Enum.AnimationPriority.Action3 or 
                                                  priority == Enum.AnimationPriority.Action4
-                        
-                        -- 如果既不是攻击名字，也不是动作优先级，则跳过（防走路误判）
                         if not isAttackName and not isActionPriority then return end
                     end
 
-                    -- 经过层层过滤，确认为攻击动作
                     if Config.DebugMode then print("[Sentinel Debug] 动画命中: " .. animName .. " | 优先级: " .. priority.Name) end
                     TriggerDefense(killerChar, "M1动画")
                 end)

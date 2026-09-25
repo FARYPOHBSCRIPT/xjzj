@@ -1,5 +1,5 @@
 -- =========================================================
--- LOST: SANDBOX 手机玩家终极版 (无文字ESP + 全套防漏报)
+-- LOST: SANDBOX 手机玩家终极精准版 (双核攻击检测，杜绝白框乱闪)
 -- =========================================================
 
 repeat task.wait() until game:IsLoaded()
@@ -18,7 +18,7 @@ local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/rel
 local Window = WindUI:CreateWindow({
     Title = "LOST Sentinel",
     Icon = "shield",
-    Author = "Ultimate Fix",
+    Author = "Precision Block",
     Folder = "LostSandboxScript",
     Size = UDim2.fromOffset(300, 420),
     Transparent = false,
@@ -42,26 +42,29 @@ Window:EditOpenButton({
 ---------------------------------------------------------
 local Config = {
     AutoBlockOn = false,
-    BlockCooldown = 1.0,
+    BlockCooldown = 0.8,
     LastBlockTime = 0,
     BlockButtonName = "block",
     ShowHitboxOnAttack = false,
-    HitboxSize = 3,
-    HitboxTransparency = 0.2,
-    HitboxDuration = 0.3,
+    HitboxSize = 4,
+    HitboxTransparency = 0.1,
+    HitboxDuration = 0.4,
     HitboxSegments = 3,
     SegmentDelay = 0.1,
     OffsetY = 2,
     OffsetZ = 3,
+    -- 核心检测开关
     EnableToolDetection = true,
     EnableAnimDetection = true,
-    EnableHealthFallback = true,
-    BruteForceMode = true,
-    MaxAttackDistance = 15,
-    FacingCheckOn = false,
-    FacingThreshold = 0.3,
-    DebugAnimations = false,
-    IgnoreKeywords = "walk,run,idle,fall,jump,climb,swim,sit,laugh,emote,interact,use,fix,repair,equip,drop",
+    EnableNetDetection = true, -- 【新增】网络攻击包检测（专治无动画特殊皮肤）
+    MaxAttackDistance = 18,
+    -- 过滤掉纯走路、待机的动画优先级（我们不再信任名字过滤，直接锁死优先级）
+    BlacklistedPriorities = {
+        [Enum.AnimationPriority.Core] = true,
+        [Enum.AnimationPriority.Movement] = true,
+        [Enum.AnimationPriority.Idle] = true,
+    },
+    -- ESP
     ESPOn = false,
     ESPShowKillers = true,
     ESPShowSurvivors = true,
@@ -77,7 +80,6 @@ end
 -- 配置文件管理
 ---------------------------------------------------------
 local CONFIG_FILE = "LostSentinel_Config.json"
-
 local function SaveConfig()
     if not writefile then Notify("保存失败", "不支持 writefile"); return end
     local success, err = pcall(function() writefile(CONFIG_FILE, httpService:JSONEncode(Config)) end)
@@ -97,28 +99,30 @@ local function LoadConfig()
 end
 
 ---------------------------------------------------------
--- 阵营判定
+-- 阵营判定（严格模式，绝不把队友当杀手）
 ---------------------------------------------------------
 local function IsKillerCharacter(char)
-    if Config.BruteForceMode then
-        local plr = playersService:GetPlayerFromCharacter(char)
-        if not plr or plr == clientPlayer then
-            if char.Parent and char.Parent.Name:lower():find("survivor") then return false end
-            return true
-        end
-        return false
-    end
+    if not char or not char:IsA("Model") or not char:FindFirstChild("Humanoid") then return false end
+    if char == clientPlayer.Character then return false end
+    
+    -- 严格检查父级文件夹和名字
     local parent = char.Parent
-    if not parent then return false end
-    if parent.Name:lower():find("killer") or char.Name:lower():find("killer") then return true end
+    if parent then
+        if parent.Name:lower():find("survivor") then return false end
+        if parent.Name:lower():find("killer") or char.Name:lower():find("killer") then return true end
+    end
+    
+    -- 如果不是玩家角色（NPC），且不在幸存者文件夹，算作杀手
+    local plr = playersService:GetPlayerFromCharacter(char)
+    if not plr then return true end
+    
     return false
 end
 
 ---------------------------------------------------------
--- 1. ESP 系统 (已移除文字)
+-- 1. ESP 系统 (纯高亮无文字)
 ---------------------------------------------------------
 local espHighlights = {}
-
 local function CreateESP(target, isKiller, isMedkit)
     if not target:IsA("Model") and not target:IsA("BasePart") then return end
     if espHighlights[target] then espHighlights[target]:Destroy() end
@@ -155,7 +159,6 @@ local function UpdateESP()
             end
         end
     end
-
     if Config.ESPShowKillers then ScanFolder("Killers", true) end
     if Config.ESPShowSurvivors then ScanFolder("Survivors", false) end
 
@@ -171,16 +174,10 @@ local function UpdateESP()
             end
         end
     end
-
-    -- 清理已消失的对象
     for target, highlight in pairs(espHighlights) do
-        if not target.Parent then
-            highlight:Destroy()
-            espHighlights[target] = nil
-        end
+        if not target.Parent then highlight:Destroy(); espHighlights[target] = nil end
     end
 end
-
 task.spawn(function() while task.wait(0.5) do UpdateESP() end end)
 
 ---------------------------------------------------------
@@ -230,7 +227,7 @@ local function ShowAttackHitbox(killerChar)
 end
 
 ---------------------------------------------------------
--- 3. 安全的格挡逻辑
+-- 3. 安全的格挡逻辑 (本地事件触发，绝不定身)
 ---------------------------------------------------------
 local networkRemote = replicatedStorage:FindFirstChild("Modules") 
     and replicatedStorage.Modules:FindFirstChild("Network") 
@@ -241,7 +238,8 @@ local function FireBlockLocalEvent()
     if not playerGui then return false end
     for _, obj in ipairs(playerGui:GetDescendants()) do
         if (obj:IsA("TextButton") or obj:IsA("ImageButton")) and obj.Visible and obj.Active then
-            if obj.Name:lower() == Config.BlockButtonName:lower() then
+            local n = obj.Name:lower()
+            if n:find(Config.BlockButtonName:lower()) or n:find("block") or n:find("defend") or n:find("shield") or n:find("格挡") then
                 if getconnections then
                     local success, connections = pcall(getconnections, obj.MouseButton1Click)
                     if success and connections then
@@ -271,38 +269,29 @@ local function IsValidAttack(killerChar)
     local myHRP = clientPlayer.Character and clientPlayer.Character:FindFirstChild("HumanoidRootPart")
     local killerHRP = killerChar:FindFirstChild("HumanoidRootPart")
     if not myHRP or not killerHRP then return false end
-    
     local dist = (myHRP.Position - killerHRP.Position).Magnitude
     if dist > Config.MaxAttackDistance then return false end
-    
-    if Config.FacingCheckOn then
-        local dirToMe = (myHRP.Position - killerHRP.Position).Unit
-        local dot = killerHRP.CFrame.LookVector:Dot(dirToMe)
-        if dot < Config.FacingThreshold then return false end
-    end
     return true
 end
 
-local function AttemptAutoBlock(killerChar, isFallback)
+local function AttemptAutoBlock(killerChar)
     if not IsValidAttack(killerChar) then return end
-    ShowAttackHitbox(killerChar)
+    ShowAttackHitbox(killerChar) -- 白框永远是精准触发，不搞保底
     if not Config.AutoBlockOn then return end
 
     local now = tick()
     if now < Config.LastBlockTime + Config.BlockCooldown then return end
     FireBlock()
     Config.LastBlockTime = now
-    if isFallback then print("[Sentinel] 血量兜底触发了格挡！") end
 end
 
 ---------------------------------------------------------
--- 5. 杀手监听 (工具 + 动画 + 血量兜底)
+-- 5. 攻击监听 (动画 + 工具 + 网络包)
 ---------------------------------------------------------
-local hookedHealth = {}
-
 local function SetupKillerHooks(killerChar)
     if not IsKillerCharacter(killerChar) then return end
     
+    -- 1. 工具激活检测
     killerChar.DescendantAdded:Connect(function(desc)
         if desc:IsA("Tool") then 
             desc.Activated:Connect(function() 
@@ -315,58 +304,64 @@ local function SetupKillerHooks(killerChar)
         currentTool.Activated:Connect(function() AttemptAutoBlock(killerChar) end)
     end
 
-    local humanoid = killerChar:FindFirstChildOfClass("Humanoid")
-    if humanoid and Config.EnableAnimDetection then
-        local animator = humanoid:FindFirstChildOfClass("Animator")
-        if animator then
-            animator.AnimationPlayed:Connect(function(track)
-                if Config.DebugAnimations then print("[动画调试]", track.Animation.Name) end
+    -- 2. 动画检测（修复 AnimationController，只允许 Action 级及以上）
+    local function HookAnimator(animatorObj)
+        if not animatorObj then return end
+        animatorObj.AnimationPlayed:Connect(function(track)
+            -- 严格优先级过滤：只允许动作级及以上的优先级触发
+            if Config.BlacklistedPriorities[track.Priority] then return end
+            if track.Priority == Enum.AnimationPriority.Action or 
+               track.Priority == Enum.AnimationPriority.Action2 or 
+               track.Priority == Enum.AnimationPriority.Action3 or 
+               track.Priority == Enum.AnimationPriority.Action4 then
+                if Config.EnableAnimDetection then AttemptAutoBlock(killerChar) end
+            end
+        end)
+    end
 
-                local animName = track.Animation and track.Animation.Name:lower() or ""
-                local isIgnored = false
-                for word in string.gmatch(Config.IgnoreKeywords, '([^,]+)') do
-                    if animName:find(word:lower():gsub("^%s*(.-)%s*$", "%1")) then isIgnored = true; break end
-                end
-                if not isIgnored then AttemptAutoBlock(killerChar) end
-            end)
-        end
+    local humanoid = killerChar:FindFirstChildOfClass("Humanoid")
+    if humanoid then
+        HookAnimator(humanoid:FindFirstChildOfClass("Animator"))
+        HookAnimator(humanoid:FindFirstChildOfClass("AnimationController"))
+        -- 监听后续加载的动画控制器
+        humanoid.DescendantAdded:Connect(function(desc)
+            if desc:IsA("Animator") or desc:IsA("AnimationController") then
+                HookAnimator(desc)
+            end
+        end)
     end
 end
 
-local function SetupPlayerHealthHook()
-    local myChar = clientPlayer.Character
-    if myChar then
-        local humanoid = myChar:FindFirstChildOfClass("Humanoid")
-        if humanoid and not hookedHealth[myChar] then
-            hookedHealth[myChar] = true
-            humanoid.HealthChanged:Connect(function(newHealth)
-                local oldHealth = humanoid:GetAttribute("LastHealth") or newHealth
-                humanoid:SetAttribute("LastHealth", newHealth)
-                
-                if newHealth < oldHealth and Config.EnableHealthFallback and Config.ShowHitboxOnAttack then
-                    print("[Sentinel] 玩家掉血！触发兜底检测")
-                    local closestKiller, minDist = nil, math.huge
-                    local myHRP = myChar:FindFirstChild("HumanoidRootPart")
-                    if myHRP then
-                        for _, k in ipairs(workspaceService:GetDescendants()) do
-                            if k:IsA("Model") and k:FindFirstChild("Humanoid") and k:FindFirstChild("HumanoidRootPart") and k ~= myChar then
-                                if IsKillerCharacter(k) then
-                                    local d = (myHRP.Position - k.HumanoidRootPart.Position).Magnitude
-                                    if d < minDist then minDist = d; closestKiller = k end
-                                end
-                            end
+-- 3. 【核心新增】网络攻击包监听（专治无动画的特殊皮肤，如 DrakoBloxxer）
+local function HookNetworkAttacks()
+    local function CheckRemote(remote)
+        if not remote:IsA("RemoteEvent") then return end
+        local n = remote.Name:lower()
+        -- 广泛匹配可能包含伤害/攻击信息的网络事件
+        if n:find("hit") or n:find("attack") or n:find("damage") or n:find("punch") or n:find("slash") or n:find("skill") or n:find("kill") then
+            remote.OnClientEvent:Connect(function(...)
+                if not Config.EnableNetDetection then return end
+                -- 收到攻击网络包，找到离自己最近的杀手并触发格挡
+                local myHRP = clientPlayer.Character and clientPlayer.Character:FindFirstChild("HumanoidRootPart")
+                if myHRP then
+                    local closestKiller, minDist = nil, Config.MaxAttackDistance
+                    for _, k in ipairs(workspaceService:GetDescendants()) do
+                        if IsKillerCharacter(k) and k:FindFirstChild("HumanoidRootPart") then
+                            local d = (myHRP.Position - k.HumanoidRootPart.Position).Magnitude
+                            if d < minDist then minDist = d; closestKiller = k end
                         end
                     end
-                    if closestKiller then AttemptAutoBlock(closestKiller, true) end
+                    if closestKiller then AttemptAutoBlock(closestKiller) end
                 end
             end)
         end
     end
+
+    for _, v in ipairs(replicatedStorage:GetDescendants()) do CheckRemote(v) end
+    replicatedStorage.DescendantAdded:Connect(CheckRemote)
 end
 
-clientPlayer.CharacterAdded:Connect(function() task.wait(1); SetupPlayerHealthHook() end)
-if clientPlayer.Character then SetupPlayerHealthHook() end
-
+-- 初始化所有杀手
 for _, desc in ipairs(workspaceService:GetDescendants()) do
     if desc:IsA("Model") and desc:FindFirstChild("Humanoid") and desc:FindFirstChild("HumanoidRootPart") then
         if desc ~= clientPlayer.Character then SetupKillerHooks(desc) end
@@ -378,6 +373,8 @@ workspaceService.DescendantAdded:Connect(function(desc)
         if desc ~= clientPlayer.Character then task.wait(0.5); SetupKillerHooks(desc) end
     end
 end)
+
+HookNetworkAttacks()
 
 ---------------------------------------------------------
 -- 6. 无限体力逻辑
@@ -412,27 +409,33 @@ SentinelTab:Divider()
 
 local BlockSection = SentinelTab:Section({ Title = "Attack 检测格挡", Opened = true })
 BlockSection:Toggle({ Title = "启用自动格挡", Default = false, Callback = function(state) Config.AutoBlockOn = state end })
-BlockSection:Slider({ Title = "格挡冷却 (秒)", Step = 0.1, Value = { Min = 0.1, Max = 3.0, Default = 1.0 }, Callback = function(value) Config.BlockCooldown = value end })
+BlockSection:Slider({ Title = "格挡冷却 (秒)", Step = 0.1, Value = { Min = 0.1, Max = 3.0, Default = 0.8 }, Callback = function(value) Config.BlockCooldown = value end })
 BlockSection:Input({ Title = "格挡按钮名字", Value = "block", Callback = function(text) if text and text ~= "" then Config.BlockButtonName = text; Notify("提示", "已改为: " .. text) end end })
 BlockSection:Button({ Title = "手动触发格挡 (测试用)", Callback = function() FireBlock() end })
 
 SentinelTab:Divider()
 local HitboxSection = SentinelTab:Section({ Title = "Attack 检测参数", Opened = true })
 HitboxSection:Toggle({ Title = "启用工具检测", Default = true, Callback = function(state) Config.EnableToolDetection = state end })
-HitboxSection:Toggle({ Title = "启用动画检测", Default = true, Callback = function(state) Config.EnableAnimDetection = state end })
-HitboxSection:Toggle({ Title = "掉血兜底检测 (防漏报)", Default = true, Callback = function(state) Config.EnableHealthFallback = state end })
-HitboxSection:Toggle({ Title = "暴力模式 (无视阵营皮肤)", Default = true, Callback = function(state) Config.BruteForceMode = state end })
-HitboxSection:Toggle({ Title = "朝向检测 (自定义皮肤慎开)", Default = false, Callback = function(state) Config.FacingCheckOn = state end })
-HitboxSection:Slider({ Title = "最大攻击距离 (米)", Step = 1, Value = { Min = 3, Max = 25, Default = 15 }, Callback = function(value) Config.MaxAttackDistance = value end })
-HitboxSection:Slider({ Title = "朝向阈值 (0-1)", Step = 0.1, Value = { Min = 0, Max = 1, Default = 0.3 }, Callback = function(value) Config.FacingThreshold = value end })
+HitboxSection:Toggle({ Title = "启用动画检测 (含控制器)", Default = true, Callback = function(state) Config.EnableAnimDetection = state end })
+
+-- 【核心】网络包检测
+HitboxSection:Toggle({ 
+    Title = "启用网络包检测 (专治特殊皮肤)", 
+    Default = true, 
+    Callback = function(state) 
+        Config.EnableNetDetection = state 
+        if state then Notify("提示", "已开启网络包检测，无动画杀手也会触发白框！") end
+    end 
+})
+
+HitboxSection:Slider({ Title = "最大攻击距离 (米)", Step = 1, Value = { Min = 3, Max = 25, Default = 18 }, Callback = function(value) Config.MaxAttackDistance = value end })
 
 HitboxSection:Divider()
 HitboxSection:Toggle({ Title = "白框指示器 (fart风格)", Default = false, Callback = function(state) Config.ShowHitboxOnAttack = state end })
-HitboxSection:Toggle({ Title = "调试模式 (打印动画)", Default = false, Callback = function(state) Config.DebugAnimations = state; if state then Notify("提示", "请查看控制台") end end })
 HitboxSection:Slider({ Title = "分块间隔时间 (秒)", Step = 0.05, Value = { Min = 0.05, Max = 0.5, Default = 0.1 }, Callback = function(value) Config.SegmentDelay = value end })
-HitboxSection:Slider({ Title = "单个方块大小", Step = 1, Value = { Min = 1, Max = 10, Default = 3 }, Callback = function(value) Config.HitboxSize = value end })
+HitboxSection:Slider({ Title = "单个方块大小", Step = 1, Value = { Min = 1, Max = 10, Default = 4 }, Callback = function(value) Config.HitboxSize = value end })
 HitboxSection:Slider({ Title = "分块数量 (1-6)", Step = 1, Value = { Min = 1, Max = 6, Default = 3 }, Callback = function(value) Config.HitboxSegments = value end })
-HitboxSection:Slider({ Title = "方块存在时间 (秒)", Step = 0.1, Value = { Min = 0.1, Max = 2.0, Default = 0.3 }, Callback = function(value) Config.HitboxDuration = value end })
+HitboxSection:Slider({ Title = "方块存在时间 (秒)", Step = 0.1, Value = { Min = 0.1, Max = 2.0, Default = 0.4 }, Callback = function(value) Config.HitboxDuration = value end })
 HitboxSection:Slider({ Title = "起始距离 (离杀手)", Step = 1, Value = { Min = 1, Max = 15, Default = 3 }, Callback = function(value) Config.OffsetZ = value end })
 HitboxSection:Slider({ Title = "高度偏移", Step = 1, Value = { Min = -5, Max = 10, Default = 2 }, Callback = function(value) Config.OffsetY = value end })
 

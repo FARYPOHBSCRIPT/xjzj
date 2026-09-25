@@ -1,5 +1,5 @@
 -- =========================================================
--- LOST: SANDBOX 手机玩家终极精准版 (双核攻击检测，杜绝白框乱闪)
+-- LOST: SANDBOX 手机玩家终极版 (双核透视防消失 + 精准格挡)
 -- =========================================================
 
 repeat task.wait() until game:IsLoaded()
@@ -53,17 +53,10 @@ local Config = {
     SegmentDelay = 0.1,
     OffsetY = 2,
     OffsetZ = 3,
-    -- 核心检测开关
     EnableToolDetection = true,
     EnableAnimDetection = true,
-    EnableNetDetection = true, -- 【新增】网络攻击包检测（专治无动画特殊皮肤）
+    EnableNetDetection = true,
     MaxAttackDistance = 18,
-    -- 过滤掉纯走路、待机的动画优先级（我们不再信任名字过滤，直接锁死优先级）
-    BlacklistedPriorities = {
-        [Enum.AnimationPriority.Core] = true,
-        [Enum.AnimationPriority.Movement] = true,
-        [Enum.AnimationPriority.Idle] = true,
-    },
     -- ESP
     ESPOn = false,
     ESPShowKillers = true,
@@ -99,52 +92,65 @@ local function LoadConfig()
 end
 
 ---------------------------------------------------------
--- 阵营判定（严格模式，绝不把队友当杀手）
+-- 阵营判定
 ---------------------------------------------------------
 local function IsKillerCharacter(char)
     if not char or not char:IsA("Model") or not char:FindFirstChild("Humanoid") then return false end
     if char == clientPlayer.Character then return false end
-    
-    -- 严格检查父级文件夹和名字
-    local parent = char.Parent
-    if parent then
-        if parent.Name:lower():find("survivor") then return false end
-        if parent.Name:lower():find("killer") or char.Name:lower():find("killer") then return true end
-    end
-    
-    -- 如果不是玩家角色（NPC），且不在幸存者文件夹，算作杀手
     local plr = playersService:GetPlayerFromCharacter(char)
-    if not plr then return true end
-    
-    return false
+    if plr == clientPlayer then return false end
+    if char.Parent and char.Parent.Name:lower():find("survivor") then return false end
+    return true
 end
 
 ---------------------------------------------------------
--- 1. ESP 系统 (纯高亮无文字)
+-- 1. ESP 系统 (双核驱动，解决 CK 皮肤消失)
 ---------------------------------------------------------
 local espHighlights = {}
-local function CreateESP(target, isKiller, isMedkit)
-    if not target:IsA("Model") and not target:IsA("BasePart") then return end
-    if espHighlights[target] then espHighlights[target]:Destroy() end
 
+local function CreateESP(target, isKiller, isMedkit)
+    if not target:IsA("Model") then return end
+    if espHighlights[target] then 
+        for _, obj in ipairs(espHighlights[target]) do pcall(function() obj:Destroy() end) end 
+    end
+
+    local objects = {}
+    local mainColor = isMedkit and Color3.fromRGB(0, 200, 255) or (isKiller and Color3.fromRGB(255, 50, 50) or Color3.fromRGB(50, 255, 50))
+
+    -- 驱动1：模型高亮 (正常皮肤显示全身)
     local highlight = Instance.new("Highlight")
-    highlight.Name = "LostESP"
+    highlight.Name = "LostESP_Highlight"
     highlight.Adornee = target
-    if isMedkit then highlight.FillColor = Color3.fromRGB(0, 200, 255)
-    elseif isKiller then highlight.FillColor = Color3.fromRGB(255, 50, 50)
-    else highlight.FillColor = Color3.fromRGB(50, 255, 50) end
+    highlight.FillColor = mainColor
     highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
     highlight.FillTransparency = 0.5
     highlight.OutlineTransparency = 0
     highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
     highlight.Parent = target
+    table.insert(objects, highlight)
 
-    espHighlights[target] = highlight
+    -- 驱动2：根部件方框 (无视网格，100%显示，解决 CK 皮肤)
+    local hrp = target:FindFirstChild("HumanoidRootPart")
+    if hrp then
+        local box = Instance.new("SelectionBox")
+        box.Name = "LostESP_Box"
+        box.Adornee = hrp
+        box.LineThickness = 0.05
+        box.Color3 = mainColor
+        box.Transparency = 0.5
+        box.Visible = true
+        box.Parent = target
+        table.insert(objects, box)
+    end
+
+    espHighlights[target] = objects
 end
 
 local function UpdateESP()
     if not Config.ESPOn then
-        for _, h in pairs(espHighlights) do h:Destroy() end
+        for _, objs in pairs(espHighlights) do
+            for _, obj in ipairs(objs) do pcall(function() obj:Destroy() end) end
+        end
         espHighlights = {}
         return
     end
@@ -152,13 +158,14 @@ local function UpdateESP()
     local function ScanFolder(folderName, isKiller)
         local folder = workspaceService:FindFirstChild("Players") and workspaceService.Players:FindFirstChild(folderName) or workspaceService:FindFirstChild(folderName)
         if folder then
-            for _, target in ipairs(folder:GetChildren()) do
-                if target:IsA("Model") and target:FindFirstChild("HumanoidRootPart") then
+            for _, target in ipairs(folder:GetDescendants()) do -- 改为 GetDescendants 防止漏掉深层模型
+                if target:IsA("Model") and target:FindFirstChild("Humanoid") and target:FindFirstChild("HumanoidRootPart") then
                     if not espHighlights[target] then CreateESP(target, isKiller, false) end
                 end
             end
         end
     end
+
     if Config.ESPShowKillers then ScanFolder("Killers", true) end
     if Config.ESPShowSurvivors then ScanFolder("Survivors", false) end
 
@@ -174,10 +181,16 @@ local function UpdateESP()
             end
         end
     end
-    for target, highlight in pairs(espHighlights) do
-        if not target.Parent then highlight:Destroy(); espHighlights[target] = nil end
+
+    -- 清理已消失的
+    for target, objs in pairs(espHighlights) do
+        if not target.Parent then
+            for _, obj in ipairs(objs) do pcall(function() obj:Destroy() end) end
+            espHighlights[target] = nil
+        end
     end
 end
+
 task.spawn(function() while task.wait(0.5) do UpdateESP() end end)
 
 ---------------------------------------------------------
@@ -227,7 +240,7 @@ local function ShowAttackHitbox(killerChar)
 end
 
 ---------------------------------------------------------
--- 3. 安全的格挡逻辑 (本地事件触发，绝不定身)
+-- 3. 安全的格挡逻辑
 ---------------------------------------------------------
 local networkRemote = replicatedStorage:FindFirstChild("Modules") 
     and replicatedStorage.Modules:FindFirstChild("Network") 
@@ -276,7 +289,7 @@ end
 
 local function AttemptAutoBlock(killerChar)
     if not IsValidAttack(killerChar) then return end
-    ShowAttackHitbox(killerChar) -- 白框永远是精准触发，不搞保底
+    ShowAttackHitbox(killerChar) -- 白框永远精准，绝不乱闪
     if not Config.AutoBlockOn then return end
 
     local now = tick()
@@ -286,12 +299,12 @@ local function AttemptAutoBlock(killerChar)
 end
 
 ---------------------------------------------------------
--- 5. 攻击监听 (动画 + 工具 + 网络包)
+-- 5. 杀手监听 (动画 + 工具 + 网络包)
 ---------------------------------------------------------
 local function SetupKillerHooks(killerChar)
     if not IsKillerCharacter(killerChar) then return end
     
-    -- 1. 工具激活检测
+    -- 1. 工具激活
     killerChar.DescendantAdded:Connect(function(desc)
         if desc:IsA("Tool") then 
             desc.Activated:Connect(function() 
@@ -304,12 +317,10 @@ local function SetupKillerHooks(killerChar)
         currentTool.Activated:Connect(function() AttemptAutoBlock(killerChar) end)
     end
 
-    -- 2. 动画检测（修复 AnimationController，只允许 Action 级及以上）
+    -- 2. 动画检测（修复 AnimationController，只允许动作级及以上）
     local function HookAnimator(animatorObj)
         if not animatorObj then return end
         animatorObj.AnimationPlayed:Connect(function(track)
-            -- 严格优先级过滤：只允许动作级及以上的优先级触发
-            if Config.BlacklistedPriorities[track.Priority] then return end
             if track.Priority == Enum.AnimationPriority.Action or 
                track.Priority == Enum.AnimationPriority.Action2 or 
                track.Priority == Enum.AnimationPriority.Action3 or 
@@ -323,25 +334,20 @@ local function SetupKillerHooks(killerChar)
     if humanoid then
         HookAnimator(humanoid:FindFirstChildOfClass("Animator"))
         HookAnimator(humanoid:FindFirstChildOfClass("AnimationController"))
-        -- 监听后续加载的动画控制器
         humanoid.DescendantAdded:Connect(function(desc)
-            if desc:IsA("Animator") or desc:IsA("AnimationController") then
-                HookAnimator(desc)
-            end
+            if desc:IsA("Animator") or desc:IsA("AnimationController") then HookAnimator(desc) end
         end)
     end
 end
 
--- 3. 【核心新增】网络攻击包监听（专治无动画的特殊皮肤，如 DrakoBloxxer）
+-- 3. 网络攻击包监听（专治 CK 这种无动画特殊皮肤）
 local function HookNetworkAttacks()
     local function CheckRemote(remote)
         if not remote:IsA("RemoteEvent") then return end
         local n = remote.Name:lower()
-        -- 广泛匹配可能包含伤害/攻击信息的网络事件
         if n:find("hit") or n:find("attack") or n:find("damage") or n:find("punch") or n:find("slash") or n:find("skill") or n:find("kill") then
             remote.OnClientEvent:Connect(function(...)
                 if not Config.EnableNetDetection then return end
-                -- 收到攻击网络包，找到离自己最近的杀手并触发格挡
                 local myHRP = clientPlayer.Character and clientPlayer.Character:FindFirstChild("HumanoidRootPart")
                 if myHRP then
                     local closestKiller, minDist = nil, Config.MaxAttackDistance
@@ -356,12 +362,10 @@ local function HookNetworkAttacks()
             end)
         end
     end
-
     for _, v in ipairs(replicatedStorage:GetDescendants()) do CheckRemote(v) end
     replicatedStorage.DescendantAdded:Connect(CheckRemote)
 end
 
--- 初始化所有杀手
 for _, desc in ipairs(workspaceService:GetDescendants()) do
     if desc:IsA("Model") and desc:FindFirstChild("Humanoid") and desc:FindFirstChild("HumanoidRootPart") then
         if desc ~= clientPlayer.Character then SetupKillerHooks(desc) end
@@ -399,7 +403,7 @@ end)
 ---------------------------------------------------------
 local SentinelTab = Window:Tab({ Title = "Sentinel", Icon = "shield" })
 
-local ESPSection = SentinelTab:Section({ Title = "ESP 透视 (纯高亮)", Opened = true })
+local ESPSection = SentinelTab:Section({ Title = "ESP 透视 (双核防消失)", Opened = true })
 ESPSection:Toggle({ Title = "启用 ESP", Default = false, Callback = function(state) Config.ESPOn = state end })
 ESPSection:Toggle({ Title = "显示杀手 (红)", Default = true, Callback = function(state) Config.ESPShowKillers = state end })
 ESPSection:Toggle({ Title = "显示幸存者 (绿)", Default = true, Callback = function(state) Config.ESPShowSurvivors = state end })
@@ -417,17 +421,7 @@ SentinelTab:Divider()
 local HitboxSection = SentinelTab:Section({ Title = "Attack 检测参数", Opened = true })
 HitboxSection:Toggle({ Title = "启用工具检测", Default = true, Callback = function(state) Config.EnableToolDetection = state end })
 HitboxSection:Toggle({ Title = "启用动画检测 (含控制器)", Default = true, Callback = function(state) Config.EnableAnimDetection = state end })
-
--- 【核心】网络包检测
-HitboxSection:Toggle({ 
-    Title = "启用网络包检测 (专治特殊皮肤)", 
-    Default = true, 
-    Callback = function(state) 
-        Config.EnableNetDetection = state 
-        if state then Notify("提示", "已开启网络包检测，无动画杀手也会触发白框！") end
-    end 
-})
-
+HitboxSection:Toggle({ Title = "启用网络包检测 (专治特殊皮肤)", Default = true, Callback = function(state) Config.EnableNetDetection = state end })
 HitboxSection:Slider({ Title = "最大攻击距离 (米)", Step = 1, Value = { Min = 3, Max = 25, Default = 18 }, Callback = function(value) Config.MaxAttackDistance = value end })
 
 HitboxSection:Divider()

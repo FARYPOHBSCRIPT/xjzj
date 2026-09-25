@@ -87,9 +87,9 @@ end
 -- 3. UI 界面构建
 ---------------------------------------------------------
 -- 测试版提醒
-local AlertTab = Window:Tab({ Title = "⚠️ 测试版提醒", Icon = "alert-triangle" })
+local AlertTab = Window:Tab({ Title = "⚠️ 提醒", Icon = "alert-triangle" })
 local AlertSection = AlertTab:Section({ Title = "使用须知", Opened = true })
-AlertSection:Paragraph({ Title = "重要警告", Content = "该脚本为测试版 (Beta)，存在非常多的 Bug！请在使用前确认风险，出现任何问题由玩家自行承担。" })
+AlertSection:Paragraph({ Title = "该脚本是测试 封禁请由玩家自行承担", Content = "该脚本为测试版 (Beta)，存在非常多的 Bug！请在使用前确认风险，出现任何问题由玩家自行承担。" })
 AlertSection:Button({ Title = "我已知晓风险", Callback = function() WindUI:Notify({ Title = "感谢支持", Content = "请谨慎调整各项参数，祝你游戏愉快！", Duration = 3 }) end })
 
 -- Sentinel 主栏目

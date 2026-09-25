@@ -91,7 +91,7 @@ ESPSection:Toggle({ Title = "显示医疗包 (青)", Default = true, Callback = 
 
 SentinelTab:Divider()
 
-local BlockSection = SentinelTab:Section({ Title = "Attack 检测格挡 (Fixsaken核心)", Opened = true })
+local BlockSection = SentinelTab:Section({ Title = "Attack 检测格挡 (Mine核心)", Opened = true })
 BlockSection:Toggle({ Title = "启用自动格挡", Default = false, Callback = function(state) 
     Config.AutoBlockOn = state 
     if state then EnableAutoBlock() else DisableAutoBlock() end
